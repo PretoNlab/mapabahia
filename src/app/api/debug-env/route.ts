@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@libsql/client";
+import { expandConfig } from "@libsql/core/config";
+import { encodeBaseUrl } from "@libsql/core/uri";
 
 export async function GET() {
   const url = process.env.TURSO_DATABASE_URL || "not set";
   const authToken = process.env.TURSO_AUTH_TOKEN || "not set";
 
-  let dbTest = "not tested";
+  let expandResult = "not tested";
+  let encodeResult = "not tested";
   try {
-    const client = createClient({ url, authToken });
-    const result = await client.execute("SELECT COUNT(*) as cnt FROM Municipality");
-    dbTest = `OK: ${JSON.stringify(result.rows[0])}`;
+    const config = expandConfig({ url, authToken }, true);
+    expandResult = JSON.stringify({
+      scheme: config.scheme,
+      authority: config.authority,
+      path: config.path,
+    });
+    const baseUrl = encodeBaseUrl(config.scheme, config.authority, config.path);
+    encodeResult = baseUrl.toString();
   } catch (e) {
-    dbTest = `ERROR: ${e instanceof Error ? `${e.message}\n${e.stack}` : String(e)}`;
+    if (expandResult === "not tested") {
+      expandResult = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+    } else {
+      encodeResult = `ERROR: ${e instanceof Error ? e.message : String(e)}`;
+    }
   }
 
   return NextResponse.json({
-    tursoUrlPrefix: url.substring(0, 40),
-    hasTursoToken: authToken !== "not set",
-    nodeEnv: process.env.NODE_ENV,
-    dbTest,
+    tursoUrlPrefix: url.substring(0, 60),
+    expandResult,
+    encodeResult,
   });
 }
