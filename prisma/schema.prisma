@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── Eleição ────────────────────────────────────────────
+model Election {
+  id           String @id @default(cuid())
+  year         Int
+  round        Int    @default(1)
+  type         String // municipal, federal
+  description  String? // "Eleições Municipais 2024", etc.
+  tseCode      String? // 619, 620, 546, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  candidates   Candidate[]
+  voteResults  VoteResult[]
+  summaries    ElectionResultSummary[]
+  documents    ElectionDocument[]
+
+  @@unique([year, round, type])
+}
+
+// ─── Município ──────────────────────────────────────────
+model Municipality {
+  id             String   @id @default(cuid())
+  name           String
+  nameNormalized String
+  ibgeCode       String?  @unique
+  tseCode        String?
+  uf             String   @default("BA")
+  geoJson        String?
+  latitude       Float?
+  longitude      Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  documents       ElectionDocument[]
+  resultSummaries ElectionResultSummary[]
+  voteResults     VoteResult[]
+
+  @@unique([nameNormalized, uf])
+  @@index([name])
+}
+
+// ─── Candidato (entidade própria, reutilizável entre eleições) ───
+model Candidate {
+  id               String  @id @default(cuid())
+  sequentialCode   String? // SQ_CANDIDATO do TSE
+  ballotNumber     String  // NR_CANDIDATO
+  name             String  // NM_CANDIDATO
+  nameNormalized   String  @default("") // Uppercase, no accents
+  ballotName       String  // NM_URNA_CANDIDATO
+  ballotNameNormalized String @default("") // Uppercase, no accents
+  party            String? // SG_PARTIDO
+  partyName        String? // NM_PARTIDO
+  coalition        String? // DS_COMPOSICAO_COLIGACAO
+  office           String  // prefeito, vereador, governador, senador, dep_federal, dep_estadual, presidente
+  electionId       String
+  status           String? // ELEITO, NÃO ELEITO, SUPLENTE, 2º TURNO, etc.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  election    Election     @relation(fields: [electionId], references: [id])
+  voteResults VoteResult[]
+
+  @@unique([sequentialCode, electionId])
+  @@index([name])
+  @@index([ballotName])
+  @@index([nameNormalized])
+  @@index([ballotNameNormalized])
+  @@index([party])
+  @@index([office])
+  @@index([electionId])
+}
+
+// ─── Votos por candidato por município (a tabela central) ───
+model VoteResult {
+  id             String @id @default(cuid())
+  candidateId    String
+  municipalityId String
+  electionId     String
+  zone           String? // NR_ZONA
+  votes          Int
+  votePercentage Float?
+
+  createdAt DateTime @default(now())
+
+  candidate    Candidate    @relation(fields: [candidateId], references: [id])
+  municipality Municipality @relation(fields: [municipalityId], references: [id])
+  election     Election     @relation(fields: [electionId], references: [id])
+
+  @@unique([candidateId, municipalityId, electionId, zone])
+  @@index([candidateId])
+  @@index([municipalityId])
+  @@index([electionId])
+  @@index([municipalityId, electionId])
+}
+
+// ─── Modelos legados (mantidos para dados já importados dos PDFs) ───
+
+model ElectionDocument {
+  id             String   @id @default(cuid())
+  fileName       String
+  filePath       String
+  rawText        String?
+  municipalityId String?
+  electionId     String?
+  year           Int
+  round          Int      @default(1)
+  uf             String   @default("BA")
+  pageCount      Int?
+  status         String   @default("pending")
+  errorMessage   String?
+  processedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  municipality   Municipality? @relation(fields: [municipalityId], references: [id])
+  election       Election?     @relation(fields: [electionId], references: [id])
+  resultSummary  ElectionResultSummary?
+  candidateResults CandidateResultLegacy[]
+  sourceChunks   SourceChunk[]
+  ingestionJob   IngestionJob? @relation(fields: [ingestionJobId], references: [id])
+  ingestionJobId String?
+
+  @@unique([fileName])
+  @@index([municipalityId])
+  @@index([status])
+}
+
+model ElectionResultSummary {
+  id                    String   @id @default(cuid())
+  documentId            String?  @unique
+  municipalityId        String
+  electionId            String?
+  year                  Int
+  round                 Int      @default(1)
+
+  totalSections         Int?
+  eligibleVoters        Int?
+  turnout               Int?
+  turnoutPercentage     Float?
+  abstention            Int?
+  abstentionPercentage  Float?
+
+  totalVotesMayor           Int?
+  validVotesMayor           Int?
+  validVotesMayorPercentage Float?
+  nullVotesMayor            Int?
+  nullVotesMayorPercentage  Float?
+  blankVotesMayor           Int?
+  blankVotesMayorPercentage Float?
+
+  totalVotesCouncil           Int?
+  validVotesCouncil           Int?
+  validVotesCouncilPercentage Float?
+  nominalVotesCouncil         Int?
+  legendVotesCouncil          Int?
+  nullVotesCouncil            Int?
+  nullVotesCouncilPercentage  Float?
+  blankVotesCouncil           Int?
+  blankVotesCouncilPercentage Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document     ElectionDocument? @relation(fields: [documentId], references: [id])
+  municipality Municipality      @relation(fields: [municipalityId], references: [id])
+  election     Election?         @relation(fields: [electionId], references: [id])
+
+  @@index([municipalityId])
+  @@index([year, round])
+  @@index([electionId])
+}
+
+// Renamed to avoid conflict with new Candidate model
+model CandidateResultLegacy {
+  id             String  @id @default(cuid())
+  documentId     String
+  municipalityId String
+  year           Int
+  round          Int     @default(1)
+
+  candidateNumber String
+  candidateName   String
+  role            String
+  party           String?
+  coalition       String?
+  votes           Int?
+  votePercentage  Float?
+  status          String?
+  voteDestination String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  document ElectionDocument @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+  @@index([party])
+  @@index([candidateName])
+  @@index([status])
+  @@map("CandidateResult")
+}
+
+model SourceChunk {
+  id         String @id @default(cuid())
+  documentId String
+  content    String
+  pageNumber Int?
+  chunkIndex Int
+  embedding  String?
+
+  createdAt DateTime @default(now())
+
+  document ElectionDocument @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+}
+
+model IngestionJob {
+  id          String   @id @default(cuid())
+  status      String   @default("pending")
+  totalFiles  Int      @default(0)
+  processed   Int      @default(0)
+  succeeded   Int      @default(0)
+  failed      Int      @default(0)
+  sourcePath  String
+  errorLog    String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents ElectionDocument[]
+}
