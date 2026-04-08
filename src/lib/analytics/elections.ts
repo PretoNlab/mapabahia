@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { classifyBahiaTerritory } from "@/lib/territory";
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 interface RaceRow {
   municipalityId: string;
@@ -141,48 +143,60 @@ function summarizeRace(rows: RaceRow[]): MayoralRaceSummary | null {
   };
 }
 
-async function getElectoralRaceRows(years: number[], office: string = "prefeito", municipalityId?: string) {
-  return prisma.voteResult.findMany({
-    where: {
-      ...(municipalityId ? { municipalityId } : {}),
-      election: {
-        is: {
-          year: { in: years },
-          round: 1,
+const getElectoralRaceRows = cache(async (years: number[], office: string = "prefeito", municipalityId?: string) => {
+  const cacheKey = `electoral-race-${years.join("-")}-${office}-${municipalityId || "all"}`;
+  
+  return unstable_cache(
+    async () => {
+      const results = await prisma.voteResult.findMany({
+        where: {
+          ...(municipalityId ? { municipalityId } : {}),
+          election: {
+            is: {
+              year: { in: years },
+              round: 1,
+            },
+          },
+          candidate: {
+            is: {
+              office,
+            },
+          },
         },
-      },
-      candidate: {
-        is: {
-          office,
+        select: {
+          municipalityId: true,
+          votes: true,
+          election: {
+            select: {
+              year: true,
+            },
+          },
+          municipality: {
+            select: {
+              name: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          candidate: {
+            select: {
+              id: true,
+              ballotName: true,
+              party: true,
+              status: true,
+            },
+          },
         },
-      },
+      });
+      return results;
     },
-    select: {
-      municipalityId: true,
-      votes: true,
-      election: {
-        select: {
-          year: true,
-        },
-      },
-      municipality: {
-        select: {
-          name: true,
-          latitude: true,
-          longitude: true,
-        },
-      },
-      candidate: {
-        select: {
-          id: true,
-          ballotName: true,
-          party: true,
-          status: true,
-        },
-      },
-    },
-  });
-}
+    [cacheKey],
+    {
+      revalidate: 86400, // 24 hours
+      tags: ["elections", "analytics"],
+    }
+  )();
+});
 
 export async function getMunicipalityMayoralComparison(
   municipalityId: string
@@ -213,7 +227,7 @@ export async function getMunicipalityMayoralComparison(
   };
 }
 
-export async function getClosestMayoralDisputes(limit: number = 10) {
+export const getClosestMayoralDisputes = cache(async (limit: number = 10) => {
   const rows = await getElectoralRaceRows([2024], "prefeito");
 
   const grouped = new Map<string, RaceRow[]>();
@@ -246,15 +260,15 @@ export async function getClosestMayoralDisputes(limit: number = 10) {
       return a.marginVotes - b.marginVotes;
     })
     .slice(0, limit);
-}
+});
 
-export async function getElectoralComparisons(
+export const getElectoralComparisons = cache(async (
   type: "municipal" | "federal" = "municipal"
 ): Promise<{
   overview: MunicipalComparisonOverview;
   rows: MunicipalComparisonRow[];
   territories: TerritoryComparisonSummary[];
-}> {
+}> => {
   const years = type === "municipal" ? [2020, 2024] : [2018, 2022];
   const office = type === "municipal" ? "prefeito" : "governador";
   const [prevYear, currYear] = years;
@@ -386,16 +400,16 @@ export async function getElectoralComparisons(
     rows: comparisons,
     territories,
   };
-}
+});
 
 // Keep alias for compatibility
 export async function getMunicipalComparisons() {
   return getElectoralComparisons("municipal");
 }
 
-export async function getPartyPerformanceBalances(
+export const getPartyPerformanceBalances = cache(async (
   type: "municipal" | "federal" = "municipal"
-): Promise<PartyBalance[]> {
+): Promise<PartyBalance[]> => {
   const { rows } = await getElectoralComparisons(type);
 
   const partyStats = new Map<string, { prev: number; curr: number }>();
@@ -422,4 +436,4 @@ export async function getPartyPerformanceBalances(
     }))
     .filter((p) => p.party !== "null" && p.party !== "")
     .sort((a, b) => b.delta - a.delta);
-}
+});

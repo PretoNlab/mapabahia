@@ -8,7 +8,7 @@ import { ExportButton } from "@/components/dashboard/export-button";
 import { TERRITORY_OPTIONS } from "@/lib/territory";
 import Link from "next/link";
 
-export const dynamic = "force-dynamic";
+// Page is dynamic because it uses searchParams, but data is cached at the layer below.
 
 export default async function ComparacaoPage({
   searchParams,
