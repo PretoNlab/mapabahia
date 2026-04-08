@@ -1,8 +1,10 @@
-import { getMunicipalComparisons, getClosestMayoralDisputes } from "@/lib/analytics/elections";
+import { getElectoralComparisons, getClosestMayoralDisputes, getPartyPerformanceBalances } from "@/lib/analytics/elections";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ComparisonTable } from "@/components/dashboard/comparison-table";
 import { DisputeTable } from "@/components/dashboard/dispute-table";
 import { TerritorySummaryTable } from "@/components/dashboard/territory-summary-table";
+import { PartyBalancePanel } from "@/components/dashboard/party-balance-panel";
+import { ExportButton } from "@/components/dashboard/export-button";
 import { TERRITORY_OPTIONS } from "@/lib/territory";
 import Link from "next/link";
 
@@ -11,13 +13,19 @@ export const dynamic = "force-dynamic";
 export default async function ComparacaoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ territory?: string }>;
+  searchParams: Promise<{ territory?: string; type?: "municipal" | "federal" }>;
 }) {
-  const { territory } = await searchParams;
+  const { territory, type = "municipal" } = await searchParams;
+  const isFederal = type === "federal";
+  const yearsLabel = isFederal ? "2018 x 2022" : "2020 x 2024";
+  const officeLabel = isFederal ? "governador" : "prefeito";
+  const currYear = isFederal ? "2022" : "2024";
+  const prevYear = isFederal ? "2018" : "2020";
 
-  const [{ overview, rows, territories }, closestDisputes] = await Promise.all([
-    getMunicipalComparisons(),
+  const [{ overview, rows, territories }, closestDisputes, balances] = await Promise.all([
+    getElectoralComparisons(type),
     getClosestMayoralDisputes(10),
+    getPartyPerformanceBalances(type),
   ]);
 
   const filteredRows = territory
@@ -30,25 +38,39 @@ export default async function ComparacaoPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Comparação <span className="text-blue-600">2020 x 2024</span>
-        </h1>
-        <p className="mt-1 text-zinc-500">
-          Mudanças de liderança e continuidade partidária nas disputas municipais para prefeito.
-        </p>
-        {territoryLabel && (
-          <p className="mt-2 text-sm text-zinc-600">
-            Filtro ativo: <span className="font-semibold">{territoryLabel}</span>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Comparação <span className="text-blue-600">{yearsLabel}</span>
+          </h1>
+          <p className="mt-1 text-zinc-500">
+            Mudanças de liderança e continuidade partidária nas disputas para {officeLabel}.
           </p>
-        )}
+        </div>
+        <div className="flex gap-3">
+          <ExportButton 
+            data={filteredRows.map(r => ({
+              Municipio: r.municipalityName,
+              Territorio: r.territoryLabel,
+              [`Vencedor ${prevYear}`]: r.previousWinnerName,
+              [`Partido ${prevYear}`]: r.previousWinnerParty,
+              [`Vencedor ${currYear}`]: r.currentWinnerName,
+              [`Partido ${currYear}`]: r.currentWinnerParty,
+              [`Margem ${prevYear}`]: `${r.previousMarginPercentage?.toFixed(2)}%`,
+              [`Margem ${currYear}`]: `${r.currentMarginPercentage?.toFixed(2)}%`,
+              Alternancia: r.changedWinner ? "Sim" : "Não",
+              TrocaPartido: r.changedParty ? "Sim" : "Não",
+            }))}
+            filename={`comparacao_bahia_${type}_${territory || "estado"}`}
+          />
+        </div>
       </div>
 
       <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Municípios Comparados"
           value={filteredRows.length.toLocaleString("pt-BR")}
-          subtitle={`base completa de ${overview.totalMunicipalitiesCompared.toLocaleString("pt-BR")} municípios para prefeito`}
+          subtitle={`base completa de ${overview.totalMunicipalitiesCompared.toLocaleString("pt-BR")} municípios para ${officeLabel}`}
         />
         <StatCard
           title="Mudaram de Vencedor"
@@ -61,9 +83,16 @@ export default async function ComparacaoPage({
           subtitle={`${(filteredRows.length - changedPartyRows.length).toLocaleString("pt-BR")} mantiveram o partido`}
         />
         <StatCard
-          title="Margem Média 2024"
+          title={`Margem Média ${currYear}`}
           value={`${(filteredRows.reduce((sum, row) => sum + (row.currentMarginPercentage ?? 0), 0) / Math.max(filteredRows.length, 1)).toFixed(2)}%`}
-          subtitle={`2020: ${(filteredRows.reduce((sum, row) => sum + (row.previousMarginPercentage ?? 0), 0) / Math.max(filteredRows.length, 1)).toFixed(2)}%`}
+          subtitle={`${prevYear}: ${(filteredRows.reduce((sum, row) => sum + (row.previousMarginPercentage ?? 0), 0) / Math.max(filteredRows.length, 1)).toFixed(2)}%`}
+        />
+      </div>
+      
+      <div className="mb-10">
+        <PartyBalancePanel 
+          balances={balances} 
+          title={`Saldo Partidário - Bahia (${yearsLabel})`} 
         />
       </div>
 
@@ -103,7 +132,7 @@ export default async function ComparacaoPage({
       <div className="mb-10">
         <ComparisonTable
           title="Municípios com Mudança de Partido"
-          description="Trocas mais relevantes de comando partidário entre 2020 e 2024."
+          description={`Trocas mais relevantes de comando partidário entre ${yearsLabel}.`}
           rows={changedPartyRows.slice(0, 30)}
         />
       </div>
@@ -119,18 +148,20 @@ export default async function ComparacaoPage({
       <div className="mb-10">
         <ComparisonTable
           title="Municípios com Continuidade"
-          description="Recorte de municípios que mantiveram a liderança nominal entre 2020 e 2024."
+          description={`Recorte de municípios que mantiveram a liderança nominal entre ${yearsLabel}.`}
           rows={retainedRows}
         />
       </div>
 
-      <div className="mb-10">
-        <DisputeTable
-          title="Disputas Mais Apertadas de 2024"
-          description="Contexto complementar para ler onde a continuidade ou a troca foi mais sensível."
-          items={closestDisputes}
-        />
-      </div>
+      {!isFederal && (
+        <div className="mb-10">
+          <DisputeTable
+            title={`Disputas Mais Apertadas de ${currYear}`}
+            description="Contexto complementar para ler onde a continuidade ou a troca foi mais sensível."
+            items={closestDisputes}
+          />
+        </div>
+      )}
     </div>
   );
 }

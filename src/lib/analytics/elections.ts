@@ -72,6 +72,13 @@ export interface TerritoryComparisonSummary {
   averageCurrentMargin: number;
 }
 
+export interface PartyBalance {
+  party: string;
+  previousCount: number;
+  currentCount: number;
+  delta: number;
+}
+
 function summarizeRace(rows: RaceRow[]): MayoralRaceSummary | null {
   if (rows.length === 0) {
     return null;
@@ -134,7 +141,7 @@ function summarizeRace(rows: RaceRow[]): MayoralRaceSummary | null {
   };
 }
 
-async function getMayoralRaceRows(years: number[], municipalityId?: string) {
+async function getElectoralRaceRows(years: number[], office: string = "prefeito", municipalityId?: string) {
   return prisma.voteResult.findMany({
     where: {
       ...(municipalityId ? { municipalityId } : {}),
@@ -142,12 +149,11 @@ async function getMayoralRaceRows(years: number[], municipalityId?: string) {
         is: {
           year: { in: years },
           round: 1,
-          type: "municipal",
         },
       },
       candidate: {
         is: {
-          office: "prefeito",
+          office,
         },
       },
     },
@@ -181,7 +187,7 @@ async function getMayoralRaceRows(years: number[], municipalityId?: string) {
 export async function getMunicipalityMayoralComparison(
   municipalityId: string
 ): Promise<MunicipalityComparison> {
-  const rows = await getMayoralRaceRows([2020, 2024], municipalityId);
+  const rows = await getElectoralRaceRows([2020, 2024], "prefeito", municipalityId);
 
   const normalizedRows: RaceRow[] = rows.map((row) => ({
     municipalityId: row.municipalityId,
@@ -208,7 +214,7 @@ export async function getMunicipalityMayoralComparison(
 }
 
 export async function getClosestMayoralDisputes(limit: number = 10) {
-  const rows = await getMayoralRaceRows([2024]);
+  const rows = await getElectoralRaceRows([2024], "prefeito");
 
   const grouped = new Map<string, RaceRow[]>();
   for (const row of rows) {
@@ -242,12 +248,18 @@ export async function getClosestMayoralDisputes(limit: number = 10) {
     .slice(0, limit);
 }
 
-export async function getMunicipalComparisons(): Promise<{
+export async function getElectoralComparisons(
+  type: "municipal" | "federal" = "municipal"
+): Promise<{
   overview: MunicipalComparisonOverview;
   rows: MunicipalComparisonRow[];
   territories: TerritoryComparisonSummary[];
 }> {
-  const rows = await getMayoralRaceRows([2020, 2024]);
+  const years = type === "municipal" ? [2020, 2024] : [2018, 2022];
+  const office = type === "municipal" ? "prefeito" : "governador";
+  const [prevYear, currYear] = years;
+
+  const rows = await getElectoralRaceRows(years, office);
 
   const grouped = new Map<string, RaceRow[]>();
   const municipalityMeta = new Map<
@@ -283,10 +295,10 @@ export async function getMunicipalComparisons(): Promise<{
   const comparisons = [...grouped.values()]
     .map((municipalityRows) => {
       const previous = summarizeRace(
-        municipalityRows.filter((row) => row.year === 2020)
+        municipalityRows.filter((row) => row.year === prevYear)
       );
       const current = summarizeRace(
-        municipalityRows.filter((row) => row.year === 2024)
+        municipalityRows.filter((row) => row.year === currYear)
       );
 
       if (!previous || !current) {
@@ -374,4 +386,40 @@ export async function getMunicipalComparisons(): Promise<{
     rows: comparisons,
     territories,
   };
+}
+
+// Keep alias for compatibility
+export async function getMunicipalComparisons() {
+  return getElectoralComparisons("municipal");
+}
+
+export async function getPartyPerformanceBalances(
+  type: "municipal" | "federal" = "municipal"
+): Promise<PartyBalance[]> {
+  const { rows } = await getElectoralComparisons(type);
+
+  const partyStats = new Map<string, { prev: number; curr: number }>();
+
+  for (const row of rows) {
+    if (row.previousWinnerParty) {
+      const stats = partyStats.get(row.previousWinnerParty) || { prev: 0, curr: 0 };
+      stats.prev += 1;
+      partyStats.set(row.previousWinnerParty, stats);
+    }
+    if (row.currentWinnerParty) {
+      const stats = partyStats.get(row.currentWinnerParty) || { prev: 0, curr: 0 };
+      stats.curr += 1;
+      partyStats.set(row.currentWinnerParty, stats);
+    }
+  }
+
+  return [...partyStats.entries()]
+    .map(([party, stats]) => ({
+      party,
+      previousCount: stats.prev,
+      currentCount: stats.curr,
+      delta: stats.curr - stats.prev,
+    }))
+    .filter((p) => p.party !== "null" && p.party !== "")
+    .sort((a, b) => b.delta - a.delta);
 }

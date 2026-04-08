@@ -1,4 +1,5 @@
 import { getStateOverview, getRanking, getAutoInsights } from "@/lib/analytics/rankings";
+import { getElectoralComparisons } from "@/lib/analytics/elections";
 import { getDistribution, TURNOUT_BANDS, ABSTENTION_BANDS } from "@/lib/analytics/distributions";
 import { getClosestMayoralDisputes } from "@/lib/analytics/elections";
 import { formatNumber, formatPercentage } from "@/lib/utils";
@@ -77,7 +78,7 @@ async function getCandidateHighlights() {
 }
 
 export default async function DashboardPage() {
-  const [overview, topElectorate, topTurnout, topAbstention, insights, turnoutDist, abstentionDist, elections, candidateHighlights, closestDisputes] =
+  const [overview, topElectorate, topTurnout, topAbstention, insights, turnoutDist, abstentionDist, elections, candidateHighlights, closestDisputes, { overview: overviewMunicipal }, { overview: overviewFederal }] =
     await Promise.all([
       getStateOverview(),
       getRanking("eligibleVoters", "desc", 10),
@@ -95,6 +96,8 @@ export default async function DashboardPage() {
       }),
       getCandidateHighlights(),
       getClosestMayoralDisputes(5),
+      getElectoralComparisons("municipal"),
+      getElectoralComparisons("federal"),
     ]);
 
   return (
@@ -113,6 +116,89 @@ export default async function DashboardPage() {
           <div className="mt-6">
             <SearchBar />
           </div>
+        </div>
+      </div>
+
+      {/* Painel de Mudanças (Prioritário) */}
+      <div className="mb-10">
+        <h2 className="mb-4 text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+          Dinâmicas de Mudança Eleitoral
+        </h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Link href="/comparacao?type=municipal" className="group block">
+            <div className="h-full rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition-all hover:border-blue-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                  Municipal 2020 x 2024
+                </span>
+                <span className="text-sm font-medium text-blue-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                  Ver detalhes →
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                Pulsar das Prefeituras
+              </h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                Análise de continuidade e alternância de poder nos 417 municípios.
+              </p>
+              <div className="mt-6 flex items-end justify-between">
+                <div>
+                  <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
+                    {formatPercentage((overviewMunicipal.changedPartyCount / overviewMunicipal.totalMunicipalitiesCompared) * 100)}
+                  </div>
+                  <div className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                    Troca de Partido
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-emerald-600">
+                    {overviewMunicipal.retainedPartyCount}
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    Mantiveram a legenda
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/comparacao?type=federal" className="group block">
+            <div className="h-full rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm transition-all hover:border-emerald-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                  Estadual 2018 x 2022
+                </span>
+                <span className="text-sm font-medium text-emerald-600 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
+                  Ver detalhes →
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                Votação para Governador
+              </h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                Comparativo regional da preferência por candidatos ao governo do estado.
+              </p>
+              <div className="mt-6 flex items-end justify-between">
+                <div>
+                  <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
+                    {formatPercentage((overviewFederal.changedPartyCount / overviewFederal.totalMunicipalitiesCompared) * 100)}
+                  </div>
+                  <div className="text-xs text-zinc-500 uppercase tracking-wider font-semibold">
+                    Alternância Partidária
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-blue-600">
+                    {overviewFederal.retainedPartyCount}
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    Mesmo partido vencedor
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Link>
         </div>
       </div>
 

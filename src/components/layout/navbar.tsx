@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard" },
+  { href: "/comparacao?type=municipal", label: "Comparação 20x24" },
+  { href: "/comparacao?type=federal", label: "Comparação 18x22" },
   { href: "/candidatos", label: "Candidatos" },
   { href: "/mapa", label: "Mapa" },
   { href: "/rankings", label: "Rankings" },

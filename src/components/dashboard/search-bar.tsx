@@ -95,14 +95,34 @@ export function SearchBar() {
                 Municipios
               </p>
               {results.municipalities.map((m) => (
-                <Link
+                <div
                   key={m.id}
-                  href={`/municipio/${m.id}`}
-                  onClick={() => setIsOpen(false)}
-                  className="block rounded-lg px-3 py-2 text-sm text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  className="block rounded-lg px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                 >
-                  {m.name}
-                </Link>
+                  <Link
+                    href={`/municipio/${m.id}`}
+                    onClick={() => setIsOpen(false)}
+                    className="text-sm font-medium text-zinc-900 dark:text-zinc-100 block mb-1"
+                  >
+                    {m.name}
+                  </Link>
+                  <div className="flex gap-2">
+                    <Link 
+                      href={`/comparacao?type=municipal&search=${encodeURIComponent(m.name)}`}
+                      onClick={() => setIsOpen(false)}
+                      className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
+                    >
+                      COMPARAR 20/24
+                    </Link>
+                    <Link 
+                      href={`/mapa?municipio=${m.id}`}
+                      onClick={() => setIsOpen(false)}
+                      className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-1 rounded hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 transition-colors"
+                    >
+                      VER MAPA
+                    </Link>
+                  </div>
+                </div>
               ))}
             </div>
           )}
