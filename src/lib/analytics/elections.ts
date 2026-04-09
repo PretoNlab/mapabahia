@@ -263,17 +263,18 @@ export const getClosestMayoralDisputes = cache(async (limit: number = 10) => {
 });
 
 export const getElectoralComparisons = cache(async (
-  type: "municipal" | "federal" = "municipal"
+  type: "municipal" | "federal" = "municipal",
+  office?: string
 ): Promise<{
   overview: MunicipalComparisonOverview;
   rows: MunicipalComparisonRow[];
   territories: TerritoryComparisonSummary[];
 }> => {
   const years = type === "municipal" ? [2020, 2024] : [2018, 2022];
-  const office = type === "municipal" ? "prefeito" : "governador";
+  const targetOffice = office || (type === "municipal" ? "prefeito" : "governador");
   const [prevYear, currYear] = years;
 
-  const rows = await getElectoralRaceRows(years, office);
+  const rows = await getElectoralRaceRows(years, targetOffice);
 
   const grouped = new Map<string, RaceRow[]>();
   const municipalityMeta = new Map<
@@ -408,9 +409,10 @@ export async function getMunicipalComparisons() {
 }
 
 export const getPartyPerformanceBalances = cache(async (
-  type: "municipal" | "federal" = "municipal"
+  type: "municipal" | "federal" = "municipal",
+  office?: string
 ): Promise<PartyBalance[]> => {
-  const { rows } = await getElectoralComparisons(type);
+  const { rows } = await getElectoralComparisons(type, office);
 
   const partyStats = new Map<string, { prev: number; curr: number }>();
 

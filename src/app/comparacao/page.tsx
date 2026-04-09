@@ -1,31 +1,41 @@
 import { getElectoralComparisons, getClosestMayoralDisputes, getPartyPerformanceBalances } from "@/lib/analytics/elections";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { ComparisonTable } from "@/components/dashboard/comparison-table";
 import { DisputeTable } from "@/components/dashboard/dispute-table";
 import { TerritorySummaryTable } from "@/components/dashboard/territory-summary-table";
 import { PartyBalancePanel } from "@/components/dashboard/party-balance-panel";
 import { ExportButton } from "@/components/dashboard/export-button";
+import { PartyGainLossChart } from "@/components/charts/party-gain-loss-chart";
+import { ComparisonViewClient } from "@/components/dashboard/comparison-view-client";
 import { TERRITORY_OPTIONS } from "@/lib/territory";
+import { ChevronRight, Filter } from "lucide-react";
 import Link from "next/link";
-
-// Page is dynamic because it uses searchParams, but data is cached at the layer below.
 
 export default async function ComparacaoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ territory?: string; type?: "municipal" | "federal" }>;
+  searchParams: Promise<{ territory?: string; type?: "municipal" | "federal"; office?: string }>;
 }) {
-  const { territory, type = "municipal" } = await searchParams;
+  const { territory, type = "municipal", office } = await searchParams;
   const isFederal = type === "federal";
+  const targetOffice = office || (isFederal ? "governador" : "prefeito");
   const yearsLabel = isFederal ? "2018 x 2022" : "2020 x 2024";
-  const officeLabel = isFederal ? "governador" : "prefeito";
+  
+  const officeLabels: Record<string, string> = {
+    governador: "Governador",
+    senador: "Senador",
+    dep_federal: "Deputado Federal",
+    dep_estadual: "Deputado Estadual",
+    prefeito: "Prefeito",
+  };
+
+  const officeLabel = officeLabels[targetOffice] || targetOffice;
   const currYear = isFederal ? "2022" : "2024";
   const prevYear = isFederal ? "2018" : "2020";
 
   const [{ overview, rows, territories }, closestDisputes, balances] = await Promise.all([
-    getElectoralComparisons(type),
+    getElectoralComparisons(type, targetOffice),
     getClosestMayoralDisputes(10),
-    getPartyPerformanceBalances(type),
+    getPartyPerformanceBalances(type, targetOffice),
   ]);
 
   const filteredRows = territory
@@ -33,21 +43,30 @@ export default async function ComparacaoPage({
     : rows;
   const changedPartyRows = filteredRows.filter((row) => row.changedParty);
   const changedWinnerRows = filteredRows.filter((row) => row.changedWinner);
-  const retainedRows = filteredRows.filter((row) => !row.changedWinner).slice(0, 20);
-  const territoryLabel = territories.find((item) => item.territorySlug === territory)?.territoryLabel;
+  const retainedCount = filteredRows.length - changedWinnerRows.length;
+  
+  const territoryLabel = territory 
+    ? TERRITORY_OPTIONS.find((t) => t.value === territory)?.label 
+    : "Todo o estado";
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-start justify-between">
+      {/* Header Section */}
+      <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between border-b border-zinc-200 pb-8 dark:border-zinc-800">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            Comparação <span className="text-blue-600">{yearsLabel}</span>
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-500 mb-2">
+            <span>Resultados</span>
+            <ChevronRight className="h-3 w-3" />
+            <span className="text-blue-600">Comparação {yearsLabel}</span>
+          </div>
+          <h1 className="text-4xl font-black tracking-tight text-zinc-900 dark:text-zinc-100">
+            {officeLabel} <span className="text-blue-600">Bahia</span>
           </h1>
-          <p className="mt-1 text-zinc-500">
-            Mudanças de liderança e continuidade partidária nas disputas para {officeLabel}.
+          <p className="mt-2 text-lg text-zinc-500 max-w-2xl">
+            Análise detalhada de continuidade e alternância de lideranças locais e regionais.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
           <ExportButton 
             data={filteredRows.map(r => ({
               Municipio: r.municipalityName,
@@ -66,21 +85,24 @@ export default async function ComparacaoPage({
         </div>
       </div>
 
+      {/* Stats Overview */}
       <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title="Municípios Comparados"
+          title="Municípios"
           value={filteredRows.length.toLocaleString("pt-BR")}
-          subtitle={`base completa de ${overview.totalMunicipalitiesCompared.toLocaleString("pt-BR")} municípios para ${officeLabel}`}
+          subtitle={`Filtrados de ${overview.totalMunicipalitiesCompared} totais`}
         />
         <StatCard
           title="Mudaram de Vencedor"
           value={changedWinnerRows.length.toLocaleString("pt-BR")}
-          subtitle={`${retainedRows.length.toLocaleString("pt-BR")} mantiveram o mesmo nome`}
+          subtitle={`${retainedCount.toLocaleString("pt-BR")} mantiveram o nome`}
+          trend="up"
         />
         <StatCard
           title="Mudaram de Partido"
           value={changedPartyRows.length.toLocaleString("pt-BR")}
-          subtitle={`${(filteredRows.length - changedPartyRows.length).toLocaleString("pt-BR")} mantiveram o partido`}
+          subtitle={`${(filteredRows.length - changedPartyRows.length).toLocaleString("pt-BR")} mantiveram a legenda`}
+          trend="up"
         />
         <StatCard
           title={`Margem Média ${currYear}`}
@@ -89,72 +111,118 @@ export default async function ComparacaoPage({
         />
       </div>
       
-      <div className="mb-10">
-        <PartyBalancePanel 
-          balances={balances} 
-          title={`Saldo Partidário - Bahia (${yearsLabel})`} 
-        />
+      {/* Visual Analytics Section */}
+      <div className="mb-10 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <PartyGainLossChart balances={balances} title="Ganhos e Perdas de Comando" />
+        </div>
+        <div className="lg:col-span-2">
+          <PartyBalancePanel 
+            balances={balances} 
+            title={`Saldo Partidário - Bahia (${yearsLabel})`} 
+          />
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="mb-10 rounded-2xl border border-zinc-200 bg-zinc-50/50 p-6 dark:border-zinc-800 dark:bg-zinc-900/30">
+        <div className="flex items-center gap-2 mb-6 text-zinc-900 dark:text-zinc-100 font-bold">
+          <Filter className="h-4 w-4 text-blue-600" />
+          <h2>Refinar Visualização</h2>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400">Cargo</h3>
+            <div className="flex flex-wrap gap-2">
+              {!isFederal ? (
+                <Link
+                  href="/comparacao?type=municipal&office=prefeito"
+                  className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${
+                    targetOffice === "prefeito"
+                      ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                      : "bg-white text-zinc-600 border border-zinc-200 hover:border-blue-400 hover:text-blue-600 dark:bg-zinc-900 dark:border-zinc-800"
+                  }`}
+                >
+                  Prefeito
+                </Link>
+              ) : (
+                <>
+                  {[
+                    { id: "governador", label: "Governador" },
+                    { id: "senador", label: "Senador" },
+                    { id: "dep_federal", label: "Dep. Federal" },
+                    { id: "dep_estadual", label: "Dep. Estadual" },
+                  ].map((off) => (
+                    <Link
+                      key={off.id}
+                      href={`/comparacao?type=federal&office=${off.id}${territory ? `&territory=${territory}` : ""}`}
+                      className={`rounded-full px-5 py-2 text-sm font-bold transition-all ${
+                        targetOffice === off.id
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                          : "bg-white text-zinc-600 border border-zinc-200 hover:border-blue-400 hover:text-blue-600 dark:bg-zinc-900 dark:border-zinc-800"
+                      }`}
+                    >
+                      {off.label}
+                    </Link>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400">Território (Recorte)</h3>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={`/comparacao?type=${type}${office ? `&office=${office}` : ""}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  !territory
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/10"
+                    : "bg-white text-zinc-500 border border-zinc-200 hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400"
+                }`}
+              >
+                Todo o estado
+              </Link>
+              {TERRITORY_OPTIONS.filter((option) => option.value !== "indefinido").map((option) => (
+                <Link
+                  key={option.value}
+                  href={`/comparacao?type=${type}${office ? `&office=${office}` : ""}&territory=${option.value}`}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    territory === option.value
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/10"
+                      : "bg-white text-zinc-500 border border-zinc-200 hover:bg-zinc-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400"
+                  }`}
+                >
+                  {option.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mb-10">
-        <div className="mb-3 flex flex-wrap gap-2">
-          <Link
-            href="/comparacao"
-            className={`rounded-full px-3 py-1.5 text-sm ${
-              !territory
-                ? "bg-blue-600 text-white"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            Todo o estado
-          </Link>
-          {TERRITORY_OPTIONS.filter((option) => option.value !== "indefinido").map((option) => (
-            <Link
-              key={option.value}
-              href={`/comparacao?territory=${option.value}`}
-              className={`rounded-full px-3 py-1.5 text-sm ${
-                territory === option.value
-                  ? "bg-blue-600 text-white"
-                  : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-              }`}
-            >
-              {option.label}
-            </Link>
-          ))}
-        </div>
         <TerritorySummaryTable
-          title="Resumo Territorial"
-          description="Leitura regional estimada a partir do centroid geográfico de cada município."
+          title={`Distribuição Regional (${officeLabel})`}
+          description={`Volume de municípios e saldo de alternância por território de identidade.`}
           items={territories}
         />
       </div>
 
-      <div className="mb-10">
-        <ComparisonTable
-          title="Municípios com Mudança de Partido"
-          description={`Trocas mais relevantes de comando partidário entre ${yearsLabel}.`}
-          rows={changedPartyRows.slice(0, 30)}
-        />
-      </div>
-
-      <div className="mb-10">
-        <ComparisonTable
-          title="Municípios com Mudança de Vencedor"
-          description="Mudança de nome vencedor, mesmo quando o partido foi mantido."
-          rows={changedWinnerRows.slice(0, 30)}
-        />
-      </div>
-
-      <div className="mb-10">
-        <ComparisonTable
-          title="Municípios com Continuidade"
-          description={`Recorte de municípios que mantiveram a liderança nominal entre ${yearsLabel}.`}
-          rows={retainedRows}
+      {/* Main Content Area - Searchable Table */}
+      <div className="mt-16">
+        <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 mb-2">Detalhamento dos Municípios</h2>
+        <p className="text-zinc-500 mb-8">Utilize a busca abaixo para encontrar municípios específicos ou grupos partidários.</p>
+        
+        <ComparisonViewClient 
+          rows={filteredRows} 
+          yearsLabel={yearsLabel} 
         />
       </div>
 
       {!isFederal && (
-        <div className="mb-10">
+        <div className="mt-20 pt-10 border-t border-zinc-200 dark:border-zinc-800">
           <DisputeTable
             title={`Disputas Mais Apertadas de ${currYear}`}
             description="Contexto complementar para ler onde a continuidade ou a troca foi mais sensível."
