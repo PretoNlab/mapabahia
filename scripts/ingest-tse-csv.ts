@@ -495,6 +495,13 @@ async function main() {
     await ingestYear(config);
   }
 
+  console.log("\n📊 Recalculando agregados por candidato (totalVotes, municipalityCount)...");
+  await prisma.$executeRawUnsafe(`
+    UPDATE Candidate SET
+      totalVotes = COALESCE((SELECT SUM(votes) FROM VoteResult WHERE candidateId = Candidate.id), 0),
+      municipalityCount = (SELECT COUNT(DISTINCT municipalityId) FROM VoteResult WHERE candidateId = Candidate.id);
+  `);
+
   console.log("\n✅ Ingestão concluída!");
 }
 

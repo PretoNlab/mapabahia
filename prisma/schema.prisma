@@ -65,6 +65,11 @@ model Candidate {
   electionId       String
   status           String? // ELEITO, NÃO ELEITO, SUPLENTE, 2º TURNO, etc.
 
+  // Precomputed aggregates from VoteResult — populated by ingest script / backfill.
+  // Avoids scanning 1M+ VoteResult rows on every /candidatos listing.
+  totalVotes        Int @default(0)
+  municipalityCount Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -79,6 +84,7 @@ model Candidate {
   @@index([party])
   @@index([office])
   @@index([electionId])
+  @@index([totalVotes])
 }
 
 // ─── Votos por candidato por município (a tabela central) ───

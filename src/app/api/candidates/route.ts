@@ -6,127 +6,66 @@ import { unstable_cache } from "next/cache";
 const getCachedCandidates = unstable_cache(
   async (q: string, office: string, year: string, party: string, sort: string, page: number, limit: number) => {
     const where: Record<string, unknown> = {};
-    const voteResultWhere: Record<string, unknown> = {};
+
     if (q.length >= 2) {
       const normalized = normalizeSearch(q);
-      const nameFilter = [
+      where.OR = [
         { ballotNameNormalized: { contains: normalized } },
         { nameNormalized: { contains: normalized } },
       ];
-      where.OR = nameFilter;
-      voteResultWhere.candidate = { is: { OR: nameFilter } };
     }
     if (office) {
       where.office = office;
-      voteResultWhere.candidate = {
-        is: {
-          ...(typeof voteResultWhere.candidate === "object" &&
-          voteResultWhere.candidate !== null &&
-          "is" in voteResultWhere.candidate
-            ? (voteResultWhere.candidate as { is: Record<string, unknown> }).is
-            : {}),
-          office,
-        },
-      };
     }
     if (party) {
       where.party = { contains: party.toUpperCase() };
-      voteResultWhere.candidate = {
-        is: {
-          ...(typeof voteResultWhere.candidate === "object" &&
-          voteResultWhere.candidate !== null &&
-          "is" in voteResultWhere.candidate
-            ? (voteResultWhere.candidate as { is: Record<string, unknown> }).is
-            : {}),
-          party: { contains: party.toUpperCase() },
-        },
-      };
     }
     if (year) {
-      const parsedYear = parseInt(year, 10);
-      where.election = { year: parsedYear };
-      voteResultWhere.election = { is: { year: parsedYear } };
+      where.election = { year: parseInt(year, 10) };
     }
 
-    const total = await prisma.candidate.count({ where });
+    const orderBy =
+      sort === "name"
+        ? { ballotName: "asc" as const }
+        : { totalVotes: "desc" as const };
 
-    // 1. Fetch basic candidate info (WITHOUT full vote results)
-    let candidates = await prisma.candidate.findMany({
-      where,
-      include: {
-        election: { select: { year: true, type: true, round: true } },
-        _count: {
-          select: { voteResults: true }, // This gives us 'municipalities' count efficiently
+    const [total, candidates] = await Promise.all([
+      prisma.candidate.count({ where }),
+      prisma.candidate.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          ballotName: true,
+          ballotNumber: true,
+          party: true,
+          office: true,
+          status: true,
+          totalVotes: true,
+          municipalityCount: true,
+          election: { select: { year: true, type: true, round: true } },
         },
-      },
-      orderBy: sort === "name" ? { ballotName: "asc" } : undefined,
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-
-    // 2. Fetch total votes using aggregation for the candidates in the current page
-    if (sort === "votes") {
-      // If sorting by votes, we need to know the IDs first based on vote totals
-      const rankedCandidateIds = await prisma.voteResult.groupBy({
-        by: ["candidateId"],
-        where: voteResultWhere,
-        _sum: { votes: true },
-        orderBy: { _sum: { votes: "desc" } },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
-      });
+      }),
+    ]);
 
-      const candidateIds = rankedCandidateIds.map((item) => item.candidateId);
-      
-      // Fetch full data for these IDs
-      const rankedCandidates = await prisma.candidate.findMany({
-        where: { id: { in: candidateIds } },
-        include: {
-          election: { select: { year: true, type: true, round: true } },
-          _count: {
-            select: { voteResults: true },
-          },
-        },
-      });
-
-      const candidateMap = new Map(rankedCandidates.map((c) => [c.id, c]));
-      candidates = candidateIds
-        .map((id) => candidateMap.get(id))
-        .filter((c): c is NonNullable<typeof c> => c !== null);
-    }
-
-    // 3. To get 'totalVotes' and 'concentrationTop10', we still need some vote context
-    // but we can fetch them only for the 50 candidates on this page.
-    const pageCandidateIds = candidates.map((c) => c.id);
-    
-    const voteAggregations = await prisma.voteResult.groupBy({
-      by: ["candidateId"],
-      where: { candidateId: { in: pageCandidateIds } },
-      _sum: { votes: true },
-    });
-
-    // For concentrationTop10, we'll fetch only the top 10 rows per candidate
-    const voteMap = new Map(voteAggregations.map(a => [a.candidateId, a._sum.votes ?? 0]));
-
-    const data = candidates.map((c) => {
-      const totalVotes = voteMap.get(c.id) ?? 0;
-      
-      return {
-        id: c.id,
-        name: c.name,
-        ballotName: c.ballotName,
-        ballotNumber: c.ballotNumber,
-        party: c.party,
-        office: c.office,
-        status: c.status,
-        year: c.election.year,
-        electionType: c.election.type,
-        round: c.election.round,
-        totalVotes,
-        municipalities: (c as any)._count?.voteResults ?? 0,
-        concentrationTop10: 0, // Temporarily disabled for performance, will see if needed
-      };
-    });
+    const data = candidates.map((c) => ({
+      id: c.id,
+      name: c.name,
+      ballotName: c.ballotName,
+      ballotNumber: c.ballotNumber,
+      party: c.party,
+      office: c.office,
+      status: c.status,
+      year: c.election.year,
+      electionType: c.election.type,
+      round: c.election.round,
+      totalVotes: c.totalVotes,
+      municipalities: c.municipalityCount,
+      concentrationTop10: 0,
+    }));
 
     return { data, total, page, limit, sort };
   },
