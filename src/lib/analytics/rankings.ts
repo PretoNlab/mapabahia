@@ -3,6 +3,7 @@ import {
   CURRENT_SUMMARY_ORDER_BY,
   CURRENT_SUMMARY_SCOPE,
 } from "@/lib/election-scope";
+import { cache } from "react";
 
 export interface RankedMunicipality {
   id: string;
@@ -25,7 +26,7 @@ export interface StateOverview {
   medianAbstentionPercentage: number;
 }
 
-export async function getStateOverview(): Promise<StateOverview> {
+export const getStateOverview = cache(async (): Promise<StateOverview> => {
   const [munCount, totalDocs, processedDocs, errorDocs, summaries] = await Promise.all([
     prisma.municipality.count(),
     prisma.electionDocument.count({
@@ -99,9 +100,9 @@ export async function getStateOverview(): Promise<StateOverview> {
     medianAbstentionPercentage:
       Math.round(median(abstentionPcts) * 100) / 100,
   };
-}
+});
 
-export async function getRanking(
+export const getRanking = cache(async (
   field:
     | "eligibleVoters"
     | "turnout"
@@ -112,7 +113,7 @@ export async function getRanking(
     | "validVotesCouncil",
   order: "asc" | "desc" = "desc",
   limit: number = 10
-): Promise<RankedMunicipality[]> {
+): Promise<RankedMunicipality[]> => {
   const summaries = await prisma.electionResultSummary.findMany({
     where: {
       ...CURRENT_SUMMARY_SCOPE,
@@ -140,9 +141,9 @@ export async function getRanking(
     value: s[field] as number,
     rank: i + 1,
   }));
-}
+});
 
-export async function getMunicipalityInsights(municipalityId: string) {
+export const getMunicipalityInsights = cache(async (municipalityId: string) => {
   const [summary, stateOverview] = await Promise.all([
     prisma.electionResultSummary.findFirst({
       where: {
@@ -213,9 +214,9 @@ export async function getMunicipalityInsights(municipalityId: string) {
     medianTurnout: stateOverview.medianTurnoutPercentage,
     medianAbstention: stateOverview.medianAbstentionPercentage,
   };
-}
+});
 
-export async function getAutoInsights(): Promise<string[]> {
+export const getAutoInsights = cache(async (): Promise<string[]> => {
   const overview = await getStateOverview();
   const insights: string[] = [];
 
@@ -285,4 +286,4 @@ export async function getAutoInsights(): Promise<string[]> {
   }
 
   return insights;
-}
+});
