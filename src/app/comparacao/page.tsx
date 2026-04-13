@@ -31,6 +31,10 @@ export default async function ComparacaoPage({
   const officeLabel = officeLabels[targetOffice] || targetOffice;
   const currYear = isFederal ? "2022" : "2024";
   const prevYear = isFederal ? "2018" : "2020";
+  // Prefeito and governador are majoritarian; senador/dep_federal/dep_estadual
+  // are plurinominal or proportional, so "winner per município" is misleading
+  // and the UI uses softer, more descriptive language.
+  const isMajoritarian = targetOffice === "prefeito" || targetOffice === "governador";
 
   const [{ overview, rows, territories }, closestDisputes, balances] = await Promise.all([
     getElectoralComparisons(type, targetOffice),
@@ -63,7 +67,9 @@ export default async function ComparacaoPage({
             {officeLabel} <span className="text-blue-600">Bahia</span>
           </h1>
           <p className="mt-2 text-lg text-zinc-500 max-w-2xl">
-            Análise detalhada de continuidade e alternância de lideranças locais e regionais.
+            {isMajoritarian
+              ? "Análise detalhada de continuidade e alternância de lideranças locais e regionais."
+              : `Quem liderou a votação em cada município entre ${prevYear} e ${currYear}. Em eleições proporcionais, o mais votado do município não equivale ao eleito.`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -86,26 +92,28 @@ export default async function ComparacaoPage({
       </div>
 
       {/* Stats Overview */}
-      <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 ${isMajoritarian ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <StatCard
           title="Municípios"
           value={filteredRows.length.toLocaleString("pt-BR")}
           subtitle={`Filtrados de ${overview.totalMunicipalitiesCompared} totais`}
         />
         <StatCard
-          title="Mudaram de Vencedor"
+          title={isMajoritarian ? "Mudaram de Vencedor" : "Candidato mais votado mudou"}
           value={changedWinnerRows.length.toLocaleString("pt-BR")}
-          subtitle={`${retainedCount.toLocaleString("pt-BR")} mantiveram o nome`}
+          subtitle={`${retainedCount.toLocaleString("pt-BR")} mantiveram o mesmo ${isMajoritarian ? "nome" : "candidato no topo"}`}
           trend="up"
         />
+        {isMajoritarian && (
+          <StatCard
+            title="Mudaram de Partido"
+            value={changedPartyRows.length.toLocaleString("pt-BR")}
+            subtitle={`${(filteredRows.length - changedPartyRows.length).toLocaleString("pt-BR")} mantiveram a legenda`}
+            trend="up"
+          />
+        )}
         <StatCard
-          title="Mudaram de Partido"
-          value={changedPartyRows.length.toLocaleString("pt-BR")}
-          subtitle={`${(filteredRows.length - changedPartyRows.length).toLocaleString("pt-BR")} mantiveram a legenda`}
-          trend="up"
-        />
-        <StatCard
-          title={`Margem Média ${currYear}`}
+          title={isMajoritarian ? `Margem Média ${currYear}` : `Vantagem média do 1º (${currYear})`}
           value={`${(filteredRows.reduce((sum, row) => sum + (row.currentMarginPercentage ?? 0), 0) / Math.max(filteredRows.length, 1)).toFixed(2)}%`}
           subtitle={`${prevYear}: ${(filteredRows.reduce((sum, row) => sum + (row.previousMarginPercentage ?? 0), 0) / Math.max(filteredRows.length, 1)).toFixed(2)}%`}
         />
@@ -205,8 +213,14 @@ export default async function ComparacaoPage({
       <div className="mb-10">
         <TerritorySummaryTable
           title={`Distribuição Regional (${officeLabel})`}
-          description={`Volume de municípios e saldo de alternância por território de identidade.`}
+          description={
+            isMajoritarian
+              ? "Volume de municípios e saldo de alternância por território de identidade."
+              : "Volume de municípios e quantos tiveram troca no candidato/partido mais votado por território."
+          }
           items={territories}
+          currYear={currYear}
+          isMajoritarian={isMajoritarian}
         />
       </div>
 
@@ -215,9 +229,12 @@ export default async function ComparacaoPage({
         <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 mb-2">Detalhamento dos Municípios</h2>
         <p className="text-zinc-500 mb-8">Utilize a busca abaixo para encontrar municípios específicos ou grupos partidários.</p>
         
-        <ComparisonViewClient 
-          rows={filteredRows} 
-          yearsLabel={yearsLabel} 
+        <ComparisonViewClient
+          rows={filteredRows}
+          yearsLabel={yearsLabel}
+          prevYear={prevYear}
+          currYear={currYear}
+          isMajoritarian={isMajoritarian}
         />
       </div>
 

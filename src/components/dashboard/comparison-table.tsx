@@ -6,13 +6,28 @@ interface ComparisonTableProps {
   title: string;
   description: string;
   rows: MunicipalComparisonRow[];
+  prevYear: string;
+  currYear: string;
+  isMajoritarian?: boolean;
 }
 
 export function ComparisonTable({
   title,
   description,
   rows,
+  prevYear,
+  currYear,
+  isMajoritarian = true,
 }: ComparisonTableProps) {
+  const changeHeader = isMajoritarian ? "Mudança" : "Diferença";
+  const marginHeader = isMajoritarian
+    ? `Margem ${currYear}`
+    : `Vantagem sobre 2º (${currYear})`;
+
+  const labelForChangedParty = isMajoritarian ? "Mudou partido" : "Partido diferente";
+  const labelForChangedWinner = isMajoritarian ? "Mudou nome" : "Nome diferente";
+  const labelForRetained = "Manteve";
+
   return (
     <Card>
       <CardHeader>
@@ -25,10 +40,10 @@ export function ComparisonTable({
             <thead>
               <tr className="border-b border-zinc-200 dark:border-zinc-800">
                 <th className="pb-3 text-left font-medium text-zinc-500">Município</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">2020</th>
-                <th className="pb-3 text-left font-medium text-zinc-500">2024</th>
-                <th className="pb-3 text-right font-medium text-zinc-500">Mudança</th>
-                <th className="pb-3 text-right font-medium text-zinc-500">Margem 2024</th>
+                <th className="pb-3 text-left font-medium text-zinc-500">{prevYear}</th>
+                <th className="pb-3 text-left font-medium text-zinc-500">{currYear}</th>
+                <th className="pb-3 text-right font-medium text-zinc-500">{changeHeader}</th>
+                <th className="pb-3 text-right font-medium text-zinc-500">{marginHeader}</th>
               </tr>
             </thead>
             <tbody>
@@ -64,10 +79,10 @@ export function ComparisonTable({
                       }
                     >
                       {row.changedParty
-                        ? "Mudou partido"
+                        ? labelForChangedParty
                         : row.changedWinner
-                          ? "Mudou nome"
-                          : "Manteve"}
+                          ? labelForChangedWinner
+                          : labelForRetained}
                     </span>
                   </td>
                   <td className="py-3 text-right tabular-nums font-semibold">
